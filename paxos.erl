@@ -246,15 +246,15 @@ getNextState({UniqueId, LastVote, CurrentBallot, WaitingFor}, {status, Key, Retu
   if
 	  (Proposal == next) ->
 		  if
-			(( Diff >= 11100) and (QuorumSize < Majority)) -> ReturnPid ! aborted;
-			(( Diff >= 11100) and (QuorumSize >= Majority)) -> put(proposal_state, beginState), put(votes, []), ReturnPid ! {voted, QuorumSize - 1};
+			(( Diff >= 11500) and (QuorumSize < Majority)) -> ReturnPid ! aborted;
+			(( Diff >= 11500) and (QuorumSize >= Majority)) -> put(proposal_state, beginState), put(votes, []), ReturnPid ! {voted, QuorumSize - 1};
 			(QuorumSize == Size) -> put(proposal_state, beginState), put(votes, []), ReturnPid ! {voted, QuorumSize - 1} ;
 			true -> ReturnPid ! {nextballot, KeyValue, Size - QuorumSize + 1}
 		  end;
 	  (Proposal == beginState) -> 
 		if 
-			(( Diff >= 11100) and (QuorumSize - 1 /= 0)) -> ReturnPid ! aborted;
-			(QuorumSize - 1 == 0) -> ReturnPid ! {success, KeyValue};
+			(( Diff >= 11500) and (QuorumSize - 1 > 0)) -> ReturnPid ! aborted;
+			(QuorumSize - 1 =< 0) -> ReturnPid ! {success, KeyValue};
 			true -> ReturnPid ! {voted, QuorumSize - 1}
 		end	
   end,
@@ -696,7 +696,7 @@ propose_value(UniqueId, PossibleValue) ->
   Pid ! {proposevalue, PossibleValue},
   timer:sleep(50),
   Status = get_proposal_state(UniqueId),
-  ?debugFmt("****************** ~n Status: ~w ~n ****************** ~n", [Status]),
+  %%?debugFmt("****************** ~n Status: ~w ~n ****************** ~n", [Status]),
   if
 	(size(Status) == 2) ->    Pid ! startVote,
   				  timer:sleep(50),
@@ -843,28 +843,42 @@ start_propose_value(UniqueId,Key,PossibleValue) ->
  
 % as propose_value above, but with a Key
 propose_value(UniqueId,Key,ProposedValue) ->
-    solveme.
+    	Pid = whereis(UniqueId),
+	  Pid ! {proposevalue, Key, ProposedValue},
+	  timer:sleep(50),
+	  Status = get_proposal_state(UniqueId, Key),
+	  ?debugFmt("****************** ~n Status: ~w  Size: ~w ~n ****************** ~n", [Status,size(Status)]),
+	  if
+		(size(Status) == 2) ->    Pid ! startVote,
+	  				  timer:sleep(50),
+					  Result = get_proposal_state(UniqueId, Key),
+					  if
+						(Result == aborted) -> ignored;
+						true -> Result
+					  end;
+		true -> ignored
+	  end.
  
  
-%% propose_paxos2_test_() ->
-%%     testme2(?_test([?assertEqual(ok, set_members(paxos1,[paxos1,pdisabled1,pdisabled2])),
-%%                    enable_member(pdisabled1),
-%%                    enable_member(pdisabled2),
-%%                    ?assertEqual({success,value}, propose_value(paxos1,key,value)),
-%%                    ?assertEqual({success,valueBar}, propose_value(paxos1,keyFoo,valueBar)),
-%%                    ?assertEqual({success,val3}, propose_value(paxos1,key3,val3))
-%%                   ])).
+ propose_paxos2_test_() ->
+     testme2(?_test([?assertEqual(ok, set_members(paxos1,[paxos1,pdisabled1,pdisabled2])),
+                    enable_member(pdisabled1),
+                    enable_member(pdisabled2),
+                    ?assertEqual({success,value}, propose_value(paxos1,key,value)),
+                    ?assertEqual({success,valueBar}, propose_value(paxos1,keyFoo,valueBar)),
+                    ?assertEqual({success,val3}, propose_value(paxos1,key3,val3))
+                   ])).
  
-%% propose_paxos3_test_() ->
-%%     testme2(?_test([?assertEqual(ok, set_members(paxos1,[paxos1,pdisabled1,pdisabled2])),
-%%                    enable_member(pdisabled1),
-%%                    % leaving 2 disabled so the process must go paralell
-%%                    ?assertEqual(ok, start_propose_value(paxos1,key,value)),
-%%                    ?assertEqual({success,valueBar}, propose_value(paxos1,keyFoo,valueBar)),
-%%                    ?assertEqual(ok, start_propose_value(paxos1,key2,value2)),
-%%                    ?assertEqual({success,value}, propose_value(paxos1,key,otherValue)),
-%%                    ?assertEqual({success,val3}, propose_value(paxos1,key3,val3))
-%%                   ])).
+ propose_paxos3_test_() ->
+     testme2(?_test([?assertEqual(ok, set_members(paxos1,[paxos1,pdisabled1,pdisabled2])),
+                    enable_member(pdisabled1),
+                    % leaving 2 disabled so the process must go paralell
+                    ?assertEqual(ok, start_propose_value(paxos1,key,value)),
+                    ?assertEqual({success,valueBar}, propose_value(paxos1,keyFoo,valueBar)),
+                    ?assertEqual(ok, start_propose_value(paxos1,key2,value2)),
+                    ?assertEqual({success,value}, propose_value(paxos1,key,otherValue)),
+                    ?assertEqual({success,val3}, propose_value(paxos1,key3,val3))
+                   ])).
  
  
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
