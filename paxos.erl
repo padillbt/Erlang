@@ -140,6 +140,7 @@ getNextState({UniqueId, LastVote, CurrentBallot, WaitingFor}, {nextballot, Ballo
   ReturnPid ! ignored,
   {UniqueId, LastVote, CurrentBallot, WaitingFor};
 getNextState({UniqueId, {LastBallot, LastValue}, _, WaitingFor}, {nextballot, Ballot, ReturnPid}) ->
+  %%?debugFmt("****************** ~n Next Ballot: ~w ~n ****************** ~n", [LastValue]),
   ReturnPid ! {lastvote, UniqueId, LastBallot, LastValue, Ballot},
   {UniqueId, {LastBallot, LastValue}, Ballot, WaitingFor};
  
@@ -173,7 +174,7 @@ getNextState({UniqueId, {LastBallot, LastValue}, CurrentBallot, _}, {proposevalu
     end, SynodIds),
   put(proposal_state, next),
   put(quorum_timer, now()),
-  {UniqueId, {null, Value}, CurrentBallot, []};
+  {UniqueId, {LastBallot, LastValue}, CurrentBallot, []};
 
 getNextState({UniqueId, {LastBallot, LastValue}, CurrentBallot, _}, {proposevalue, Key, Value}) ->
   SynodIds = get(synod_ids),
@@ -184,13 +185,15 @@ getNextState({UniqueId, {LastBallot, LastValue}, CurrentBallot, _}, {proposevalu
     end, SynodIds),
   put(proposal_state, next),
   put(quorum_timer, now()),
-  {UniqueId, {null, Value}, CurrentBallot, []};
+  {UniqueId, {LastBallot, LastValue}, CurrentBallot, []};
  
 getNextState({UniqueId, {LastBallot, LastValue}, CurrentBallot, WaitingFor}, {lastvote, Id, Ballot, Value, _}) when ((Ballot > LastBallot) and (Ballot /= null)) ->
   UpdatedVoters = lists:append([Id], WaitingFor),
+  %%?debugFmt("~n ****************** ~n Greater Last Vote: ~w with Value: ~w New Vote: ~w with Value: ~w  ~n ****************** ~n", [LastBallot, LastValue, Ballot, Value]),
   {UniqueId, {Ballot, Value}, CurrentBallot, UpdatedVoters};
-getNextState({UniqueId, {LastBallot, LastValue}, CurrentBallot, WaitingFor}, {lastvote, Id, Ballot, _, _})  ->
+getNextState({UniqueId, {LastBallot, LastValue}, CurrentBallot, WaitingFor}, {lastvote, Id, Ballot, Value, _})  ->
   UpdatedVoters = lists:append([Id], WaitingFor),
+  %%?debugFmt("~n ****************** ~n Less Last Vote: ~w with Value: ~w New Vote: ~w with Value: ~w  ~n ****************** ~n", [LastBallot, LastValue, Ballot, Value]),
   {UniqueId, {LastBallot, LastValue}, CurrentBallot, UpdatedVoters};
 
  
@@ -201,14 +204,15 @@ getNextState({UniqueId, LastVote, CurrentBallot, WaitingFor}, {status, ReturnPid
   %%?debugFmt("****************** ~n Vote Value: ~w ~n ****************** ~n", [LastVote]),
   Members = get(synod_ids),
   Size = length(Members),
-  Majority = Size/2,
+  Majority = round(Size/2),
   QuorumSize = length(WaitingFor),
-  %%?debugFmt("****************** ~n Time: ~w Value: ~w ~n ****************** ~n", [Diff, QuorumSize]),
+  %?debugFmt("~n ****************** ~n Time: ~w Value: ~w Majority: ~w memberSize: ~w ~n ****************** ~n", [Diff, QuorumSize, Majority, Size]),
   Proposal = get(proposal_state),
   if
 	  (Proposal == next) ->
 		  if
-			(( Diff >= 11500) and (QuorumSize < Majority)) -> ReturnPid ! aborted;
+
+			((( Diff >= 11500) and (QuorumSize < Majority)) or ( Diff > 260000)) -> ReturnPid ! aborted;
 			(( Diff >= 11500) and (QuorumSize >= Majority)) -> ReturnPid ! {voted, QuorumSize - 1}, put(proposal_state, beginState), put(votes, []);
 			(QuorumSize == Size) -> ReturnPid ! {voted, QuorumSize - 1}, put(proposal_state, beginState), put(votes, []);
 			true -> ReturnPid ! {nextballot, Value, Size - QuorumSize}
@@ -241,13 +245,13 @@ getNextState({UniqueId, LastVote, CurrentBallot, WaitingFor}, {status, Key, Retu
   Size = length(Members),
   Majority = Size/2,
   QuorumSize = length(WaitingFor),
-  %% ?debugFmt("****************** ~n Time: ~w Value: ~w ~n ****************** ~n", [Diff, QuorumSize]),
+  %?debugFmt("****************** ~n Time: ~w Value: ~w ~n ****************** ~n", [Diff, QuorumSize]),
   Proposal = get(proposal_state),
   if
 	  (Proposal == next) ->
 		  if
 			(( Diff >= 11500) and (QuorumSize < Majority)) -> ReturnPid ! aborted;
-			(( Diff >= 11500) and (QuorumSize >= Majority)) -> put(proposal_state, beginState), put(votes, []), ReturnPid ! {voted, QuorumSize - 1};
+			(( Diff >= 11500) and (QuorumSize >= Majority) and ( Diff < 260000)) -> put(proposal_state, beginState), put(votes, []), ReturnPid ! {voted, QuorumSize - 1};
 			(QuorumSize == Size) -> put(proposal_state, beginState), put(votes, []), ReturnPid ! {voted, QuorumSize - 1} ;
 			true -> ReturnPid ! {nextballot, KeyValue, Size - QuorumSize + 1}
 		  end;
@@ -847,7 +851,7 @@ propose_value(UniqueId,Key,ProposedValue) ->
 	  Pid ! {proposevalue, Key, ProposedValue},
 	  timer:sleep(50),
 	  Status = get_proposal_state(UniqueId, Key),
-	  ?debugFmt("****************** ~n Status: ~w  Size: ~w ~n ****************** ~n", [Status,size(Status)]),
+	  %%?debugFmt("****************** ~n Status: ~w  Size: ~w ~n ****************** ~n", [Status,size(Status)]),
 	  if
 		(size(Status) == 2) ->    Pid ! startVote,
 	  				  timer:sleep(50),
