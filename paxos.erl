@@ -178,7 +178,11 @@ getNextState({UniqueId, {LastBallot, LastValue}, CurrentBallot, _}, {proposevalu
 
 getNextState({UniqueId, {LastBallot, LastValue}, CurrentBallot, _}, {proposevalue, Key, Value}) ->
   SynodIds = get(synod_ids),
-  put(Key, Value),
+  StoredValue = get(Key),
+  if
+	(StoredValue == undefined) -> put(Key, Value);
+	true -> put(Key, StoredValue)
+  end,
   lists:foreach(fun(Id) ->
         Pid = whereis(Id),
         Pid ! {nextballot, CurrentBallot, self()}
